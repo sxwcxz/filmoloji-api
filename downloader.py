@@ -4,7 +4,12 @@ import subprocess
 import os
 
 app = Flask(__name__)
-CORS(app) # Tüm sitelerden erişime izin ver
+CORS(app)
+
+# Ana sayfa testi (Sunucu çalışıyor mu diye bakmak için)
+@app.route('/')
+def home():
+    return "✅ Filmoloji İndirme Sunucusu AKTİF! (Kullanmak için /indir yolunu kullanın)"
 
 @app.route('/indir')
 def download_video():
@@ -13,16 +18,18 @@ def download_video():
     filename = f"{raw_name}.mp4"
 
     if not m3u8_url:
-        return "URL Yok", 400
+        return "❌ Hata: Link (URL) gönderilmedi.", 400
 
-    # FFmpeg nerede? (Bizim script indirdi mi yoksa sistemde var mı?)
+    # FFmpeg yolunu bul
     if os.path.exists("./ffmpeg"):
         ffmpeg_cmd = "./ffmpeg"
     else:
         ffmpeg_cmd = "ffmpeg"
 
+    # FFmpeg Komutu (User-Agent eklendi, böylece siteler bizi engellemez)
     command = [
         ffmpeg_cmd,
+        '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', # Tarayıcı taklidi
         '-i', m3u8_url,
         '-c', 'copy',
         '-bsf:a', 'aac_adtstoasc',
@@ -36,7 +43,7 @@ def download_video():
     def generate():
         try:
             while True:
-                data = process.stdout.read(1024 * 1024)
+                data = process.stdout.read(1024 * 1024) 
                 if not data:
                     break
                 yield data
