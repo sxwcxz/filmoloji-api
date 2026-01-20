@@ -1,64 +1,52 @@
 import os
 import subprocess
-import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import re
 
 app = Flask(__name__)
 CORS(app)
 
-# İndirilenlerin kaydedileceği klasör
-DOWNLOAD_FOLDER = "Indirilenler"
+# Masaüstünde "Filmoloji_Indirilenler" klasörü oluşturur
+DESKTOP = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+DOWNLOAD_FOLDER = os.path.join(DESKTOP, "Filmoloji_Indirilenler")
+
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
 
-def indir_arkaplanda(url, filename):
-    print(f"--> İNDİRME BAŞLATILIYOR: {filename}")
-    
-    # Dosya yolu
-    output_path = os.path.join(DOWNLOAD_FOLDER, filename)
-    
-    # FFmpeg Komutu (Direkt dosyaya kaydet)
-    command = [
-        "ffmpeg", 
-        '-y', # Varsa üzerine yaz
-        '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        '-i', url,
-        '-c', 'copy',
-        '-bsf:a', 'aac_adtstoasc',
-        output_path
-    ]
-
-    # İşlemi başlat ve bitene kadar bekle
-    result = subprocess.run(command, capture_output=True, text=True)
-    
-    if result.returncode == 0:
-        print(f"✅ İNDİRME TAMAMLANDI: {output_path}")
-        # İndirme bitince klasörü aç (Opsiyonel - Windows için)
-        os.startfile(os.path.abspath(DOWNLOAD_FOLDER))
-    else:
-        print(f"❌ HATA OLUŞTU:\n{result.stderr}")
+def dosya_ismini_temizle(isim):
+    # Dosya ismindeki yasaklı karakterleri temizler (: / \ * vb.)
+    return re.sub(r'[\\/*?:"<>|]', "", isim)
 
 @app.route('/indir')
-def download_request():
-    m3u8_url = request.args.get('url')
+def start_download():
+    url = request.args.get('url')
     raw_name = request.args.get('name', 'film')
-    filename = f"{raw_name}.mp4"
+    
+    if not url: return jsonify({"status": "error", "message": "Link yok"}), 400
 
-    if not m3u8_url:
-        return jsonify({"durum": "hata", "mesaj": "Link yok"}), 400
+    clean_name = dosya_ismini_temizle(raw_name)
+    file_path = os.path.join(DOWNLOAD_FOLDER, f"{clean_name}.mp4")
 
-    # İndirmeyi ayrı bir "Thread" (iş parçacığı) olarak başlat
-    # Böylece sunucu donmaz, arayüze hemen cevap döner.
-    thread = threading.Thread(target=indir_arkaplanda, args=(m3u8_url, filename))
-    thread.start()
+    # Eğer ffmpeg.exe yanındaysa onu kullan, yoksa sistemdekini
+    ffmpeg_exe = "ffmpeg.exe" if os.path.exists("ffmpeg.exe") else "ffmpeg"
+
+    # --- SİHİRLİ KISIM ---
+    # Bu komut yeni bir siyah pencere açar (CREATE_NEW_CONSOLE).
+    # Kullanıcı indirmeyi orada "parça parça" izler.
+    # Bitince pencere kapanır.
+    
+    cmd = f'title Filmoloji: {clean_name} && echo İNDİRİLİYOR: {clean_name} && echo Lütfen pencereyi kapatmayin... && "{ffmpeg_exe}" -y -user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -i "{url}" -c copy -bsf:a aac_adtstoasc "{file_path}" && echo. && echo BITTI! Klasor aciliyor... && explorer "{DOWNLOAD_FOLDER}"'
+
+    # Windows'ta yeni pencere açmak için:
+    subprocess.Popen(f'start cmd /c "{cmd}"', shell=True)
 
     return jsonify({
-        "durum": "basladi", 
-        "mesaj": f"İndirme arka planda başlatıldı! '{DOWNLOAD_FOLDER}' klasörüne bak.",
-        "dosya_adi": filename
+        "status": "success", 
+        "message": "İndirme penceresi açıldı! Parçalar birleştiriliyor...",
+        "path": file_path
     })
 
 if __name__ == '__main__':
-    print(f"Sistem Hazır! Dosyalar '{DOWNLOAD_FOLDER}' klasörüne inecek.")
+    print(f"Server Aktif! Dosyalar şuraya inecek: {DOWNLOAD_FOLDER}")
     app.run(port=5000)
