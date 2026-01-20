@@ -4,9 +4,9 @@ import subprocess
 import os
 
 app = Flask(__name__)
-CORS(app)
+CORS(app) # Tüm sitelerden erişime izin ver
 
-# Ana sayfa testi (Sunucu çalışıyor mu diye bakmak için)
+# Ana sayfa kontrolü (Sunucu yaşıyor mu?)
 @app.route('/')
 def home():
     return "✅ Filmoloji İndirme Sunucusu AKTİF! (Kullanmak için /indir yolunu kullanın)"
@@ -20,16 +20,18 @@ def download_video():
     if not m3u8_url:
         return "❌ Hata: Link (URL) gönderilmedi.", 400
 
-    # FFmpeg yolunu bul
+    # FFmpeg yolunu belirle (Render'da mı yoksa Localde mi?)
     if os.path.exists("./ffmpeg"):
         ffmpeg_cmd = "./ffmpeg"
     else:
         ffmpeg_cmd = "ffmpeg"
 
-    # FFmpeg Komutu (User-Agent eklendi, böylece siteler bizi engellemez)
+    # FFmpeg Komutu
+    # -user_agent: Sitelerin bizi bot sanıp engellememesi için.
+    # -c copy: Görüntüyü bozmadan (re-encode yapmadan) kopyalar. Hızlıdır.
     command = [
         ffmpeg_cmd,
-        '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', # Tarayıcı taklidi
+        '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         '-i', m3u8_url,
         '-c', 'copy',
         '-bsf:a', 'aac_adtstoasc',
@@ -38,20 +40,23 @@ def download_video():
         'pipe:1'
     ]
 
+    # İşlemi başlat
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     def generate():
         try:
             while True:
-                data = process.stdout.read(1024 * 1024) 
+                data = process.stdout.read(1024 * 1024) # 1MB'lık parçalar
                 if not data:
                     break
                 yield data
         finally:
             process.terminate()
 
+    # mimetype="application/octet-stream" sayesinde tarayıcı bunu
+    # video olarak oynatmaz, DOSYA OLARAK indirir.
     return Response(stream_with_context(generate()), 
-                    mimetype="video/mp4",
+                    mimetype="application/octet-stream",
                     headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 if __name__ == '__main__':
